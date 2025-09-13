@@ -607,19 +607,10 @@ class MiddleWayStrategy(Strategy):
         return signals
     
     def _check_breakout_adjustments(self, position: PositionState, current_date: date) -> List[TradingSignal]:
-        """Check for breakouts and generate adjustment signals."""
+        """Check for breakouts and generate adjustment signals or exit signals if max adjustments reached."""
         signals = []
         
         try:
-            # Only adjust if we haven't hit max adjustments
-            if position.adjustment_count >= self.strategy_config.max_adjustments_per_stock:
-                return signals
-            
-            # Check minimum days between adjustments
-            if (position.last_adjustment_date and 
-                (current_date - position.last_adjustment_date).days < self.strategy_config.min_days_between_adjustments):
-                return signals
-            
             # Get current spot price
             spot_price = self.data_manager.get_stock_price(position.symbol, current_date)
             if not spot_price:
@@ -629,6 +620,33 @@ class MiddleWayStrategy(Strategy):
             breakout_direction = self._detect_breakout(position, spot_price)
             
             if breakout_direction != BreakoutDirection.NONE:
+                # If we've hit max adjustments, exit the position immediately on breakout
+                if position.adjustment_count >= self.strategy_config.max_adjustments_per_stock:
+                    exit_signals = self._generate_exit_signals(
+                        position, 
+                        current_date, 
+                        f"Breakout after max adjustments ({position.adjustment_count}/{self.strategy_config.max_adjustments_per_stock}) - {breakout_direction.value} move detected"
+                    )
+                    signals.extend(exit_signals)
+                    
+                    # Log the critical exit decision
+                    self.logger.warning(f"🚨 MAX ADJUSTMENTS EXIT: {position.symbol} | Breakout: {breakout_direction.value} | Spot: ₹{spot_price:.2f}")
+                    self.logger.warning(f"  ├─ Adjustments used: {position.adjustment_count}/{self.strategy_config.max_adjustments_per_stock}")
+                    self.logger.warning(f"  ├─ Position type: {position.position_type.value}")
+                    if position.call_strike:
+                        self.logger.warning(f"  ├─ Call strike: {position.call_strike}")
+                    if position.put_strike:
+                        self.logger.warning(f"  ├─ Put strike: {position.put_strike}")
+                    self.logger.warning(f"  └─ Exiting to prevent further losses")
+                    
+                    return signals
+                
+                # Check minimum days between adjustments
+                if (position.last_adjustment_date and 
+                    (current_date - position.last_adjustment_date).days < self.strategy_config.min_days_between_adjustments):
+                    return signals
+                
+                # Generate normal adjustment signals if adjustments are still allowed
                 adjustment_signals = self._generate_adjustment_signals(position, breakout_direction, current_date)
                 signals.extend(adjustment_signals)
             
