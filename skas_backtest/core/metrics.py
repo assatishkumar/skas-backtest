@@ -100,12 +100,22 @@ class BacktestResults:
                     'realized_pnl': 'last'
                 }).round(2)
                 
+                prev_realized_pnl = 0  # Track previous month's realized P&L
                 for month, data in monthly_summary.iterrows():
                     start_val = data[('total_value', 'first')]
                     end_val = data[('total_value', 'last')]
                     realized_pnl = data[('realized_pnl', 'last')]
+                    
+                    # Calculate incremental and cumulative metrics
                     monthly_return = ((end_val - start_val) / start_val * 100) if start_val > 0 else 0
-                    lines.append(f"  {month}: {monthly_return:+.1f}% (Realized: ₹{realized_pnl:,.0f})")
+                    monthly_pnl = realized_pnl - prev_realized_pnl  # Incremental P&L for this month
+                    cumulative_return = ((end_val - self.initial_capital) / self.initial_capital * 100) if self.initial_capital > 0 else 0
+                    
+                    # Display both monthly (incremental) and cumulative performance
+                    lines.append(f"  {month}: Monthly: {monthly_return:+.1f}% (₹{monthly_pnl:,.0f}) | "
+                               f"Cumulative: {cumulative_return:+.1f}% (₹{realized_pnl:,.0f})")
+                    
+                    prev_realized_pnl = realized_pnl  # Update for next iteration
                 lines.append("")
             
             # API Performance (if available)
